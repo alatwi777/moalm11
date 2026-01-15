@@ -1006,14 +1006,16 @@
             position: absolute;
             top: 10px;
             left: 10px;
-            background: rgba(74, 111, 165, 0.9);
-            color: white;
+            color: #dc3545;
             padding: 8px 15px;
-            border-radius: 20px;
             font-weight: bold;
             font-size: 18px;
             z-index: 10;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            transform: rotate(-5deg);
+            font-family: 'Cairo', cursive;
+            background: rgba(255,255,255,0.8);
+            border: 2px dashed #dc3545;
+            border-radius: 5px;
         }
 
         .print-btn {
@@ -1021,6 +1023,24 @@
             top: 100px;
             left: 30px;
             background: #4a6fa5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-weight: 600;
+            z-index: 100;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .save-float-btn {
+            position: fixed;
+            top: 160px;
+            left: 30px;
+            background: #28a745;
             color: white;
             border: none;
             border-radius: 8px;
@@ -1154,7 +1174,6 @@
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -1400,7 +1419,7 @@
                     </p>
                 </div>
                 
-                <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleExcelImport(event)" style="display: none;">
+                <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleExcelImport(event)" style="display: none;">
                 
                 <div id="importAlert" class="alert"></div>
                 
@@ -1494,7 +1513,26 @@
             loadAllData();
             updateDashboard();
             loadHeaderData();
+            
+            // تحميل مكتبة SheetJS (XLSX) بشكل ديناميكي
+            loadXLSXLibrary();
         });
+        
+        // دالة لتحميل مكتبة XLSX بشكل ديناميكي
+        function loadXLSXLibrary() {
+            if (typeof XLSX === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+                script.onload = function() {
+                    console.log('تم تحميل مكتبة XLSX بنجاح');
+                };
+                script.onerror = function() {
+                    console.error('فشل تحميل مكتبة XLSX');
+                    showAlert('فشل تحميل مكتبة معالجة ملفات Excel. يرجى تحديث الصفحة.', 'error');
+                };
+                document.head.appendChild(script);
+            }
+        }
         
         function updateCurrentDate() {
             const now = new Date();
@@ -1567,18 +1605,28 @@
         
         function updateDashboard() {
             try {
-                document.getElementById('totalTests').textContent = 
-                    testsList.filter(t => t.isPublished).length;
+                // تحديث عدد الاختبارات المنشورة
+                const publishedTests = testsList.filter(t => t.isPublished);
+                document.getElementById('totalTests').textContent = publishedTests.length;
+                
+                // تحديث عدد الطلاب المسجلين
                 document.getElementById('totalStudents').textContent = studentsList.length;
                 
+                // تحديث إجمالي عدد الأسئلة في جميع الاختبارات
                 let totalQuestions = 0;
                 testsList.forEach(test => {
                     totalQuestions += test.questions.length;
                 });
                 document.getElementById('totalQuestions').textContent = totalQuestions;
                 
-                document.getElementById('completedTests').textContent = resultsList.length;
+                // تحديث عدد الاختبارات المكتملة (التي لها نتائج)
+                const completedTestsSet = new Set();
+                resultsList.forEach(result => {
+                    completedTestsSet.add(result.testId);
+                });
+                document.getElementById('completedTests').textContent = completedTestsSet.size;
                 
+                // تحديث عدد الإجابات التي تحتاج تصحيح
                 let pendingGrading = 0;
                 resultsList.forEach(result => {
                     if (result.needsManualGrading && !result.isManuallyGraded) {
@@ -1586,8 +1634,10 @@
                     }
                 });
                 document.getElementById('pendingGrading').textContent = pendingGrading;
+                
             } catch (error) {
                 console.error('خطأ في تحديث لوحة التحكم:', error);
+                showAlert('حدث خطأ في تحديث لوحة التحكم', 'error');
             }
         }
         
@@ -1768,9 +1818,14 @@
                     }
                     
                     html += `
-                            <button onclick="removeQuestion(${index})" class="btn btn-danger" style="padding: 8px 15px; font-size: 14px; margin-top: 15px;">
-                                <i class="fas fa-trash"></i> حذف
-                            </button>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button onclick="removeQuestion(${index})" class="btn btn-danger" style="padding: 8px 15px; font-size: 14px;">
+                                    <i class="fas fa-trash"></i> حذف
+                                </button>
+                                <button onclick="editQuestionPoints(${index})" class="btn btn-warning" style="padding: 8px 15px; font-size: 14px;">
+                                    <i class="fas fa-edit"></i> تعديل الدرجة
+                                </button>
+                            </div>
                         </div>
                     `;
                 });
@@ -1780,6 +1835,69 @@
             } catch (error) {
                 console.error('خطأ في تحديث قائمة الأسئلة:', error);
                 showAlert('حدث خطأ في تحديث قائمة الأسئلة', 'error');
+            }
+        }
+        
+        function editQuestionPoints(index) {
+            try {
+                const question = currentTest.questions[index];
+                const newPoints = prompt('تعديل درجة السؤال:', question.points);
+                
+                if (newPoints !== null && !isNaN(newPoints) && newPoints > 0) {
+                    const oldPoints = question.points;
+                    question.points = parseInt(newPoints);
+                    
+                    updateQuestionsList();
+                    
+                    updateAllResultsForQuestion(index, oldPoints, parseInt(newPoints));
+                    
+                    showAlert('تم تعديل درجة السؤال بنجاح', 'success');
+                }
+            } catch (error) {
+                console.error('خطأ في تعديل درجة السؤال:', error);
+                showAlert('حدث خطأ في تعديل درجة السؤال', 'error');
+            }
+        }
+        
+        function updateAllResultsForQuestion(questionIndex, oldPoints, newPoints) {
+            try {
+                resultsList.forEach(result => {
+                    if (result.testId === currentTest.id && result.answers && result.answers[questionIndex] !== undefined) {
+                        const question = currentTest.questions[questionIndex];
+                        
+                        if (question.type === 'mcq') {
+                            if (result.answers[questionIndex] === question.correctAnswer) {
+                                const oldScore = result.score || 0;
+                                result.score = oldScore - oldPoints + newPoints;
+                                
+                                if (result.isManuallyGraded) {
+                                    result.finalScore = result.finalScore - oldPoints + newPoints;
+                                    result.finalPercentage = Math.round((result.finalScore / result.total) * 100);
+                                }
+                                
+                                result.percentage = Math.round((result.score / result.total) * 100);
+                            }
+                        } else if (question.type === 'essay' && result.manualGrades && result.manualGrades[questionIndex] !== undefined) {
+                            const manualGrade = result.manualGrades[questionIndex];
+                            const ratio = manualGrade / oldPoints;
+                            const newManualGrade = Math.round(ratio * newPoints);
+                            result.manualGrades[questionIndex] = newManualGrade;
+                            
+                            if (result.isManuallyGraded) {
+                                result.finalScore = result.finalScore - manualGrade + newManualGrade;
+                                result.finalPercentage = Math.round((result.finalScore / result.total) * 100);
+                            }
+                        }
+                        
+                        result.total = result.total - oldPoints + newPoints;
+                    }
+                });
+                
+                localStorage.setItem('teacher_results', JSON.stringify(resultsList));
+                
+                showAlert('تم تحديث جميع النتائج تلقائياً', 'success');
+            } catch (error) {
+                console.error('خطأ في تحديث النتائج:', error);
             }
         }
         
@@ -2039,83 +2157,254 @@
             }
         }
         
+        // ==================== الحل الجذري لاستيراد Excel ====================
         function handleExcelImport(event) {
             const file = event.target.files[0];
-            if (!file) return;
+            if (!file) {
+                showAlert('لم يتم اختيار أي ملف', 'error');
+                return;
+            }
+            
+            // التحقق من نوع الملف
+            const validTypes = ['.xlsx', '.xls', '.csv'];
+            const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+            
+            if (!validTypes.includes(fileExtension)) {
+                showAlert('نوع الملف غير مدعوم. يرجى استخدام ملف Excel (xlsx, xls) أو CSV', 'error');
+                document.getElementById('fileInput').value = '';
+                return;
+            }
+            
+            // إظهار رسالة تحميل
+            showAlert('جاري معالجة الملف...', 'success');
             
             const reader = new FileReader();
             
             reader.onload = function(e) {
                 try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                    let jsonData;
                     
-                    if (jsonData.length === 0) {
+                    if (fileExtension === '.csv') {
+                        // معالجة ملف CSV
+                        jsonData = parseCSV(e.target.result);
+                    } else {
+                        // معالجة ملف Excel
+                        if (typeof XLSX === 'undefined') {
+                            showAlert('مكتبة معالجة Excel لم يتم تحميلها. يرجى تحديث الصفحة والمحاولة مرة أخرى.', 'error');
+                            return;
+                        }
+                        
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        
+                        // الحصول على اسم الورقة الأولى
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        
+                        // تحويل الورقة إلى JSON
+                        jsonData = XLSX.utils.sheet_to_json(worksheet, {defval: ''});
+                    }
+                    
+                    if (!jsonData || jsonData.length === 0) {
                         showAlert('الملف لا يحتوي على بيانات', 'error');
+                        document.getElementById('fileInput').value = '';
                         return;
                     }
                     
-                    const importedStudents = [];
-                    const duplicates = [];
-                    
-                    jsonData.forEach(row => {
-                        const ssn = row['السجل المدني'] || row['ssn'] || row['رقم'] || '';
-                        const name = row['الاسم'] || row['name'] || '';
-                        
-                        if (ssn && name) {
-                            const ssnStr = ssn.toString().trim();
-                            const nameStr = name.toString().trim();
-                            
-                            const isDuplicate = studentsList.some(s => s.ssn === ssnStr);
-                            if (!isDuplicate) {
-                                importedStudents.push({
-                                    id: 'STU-' + Date.now() + Math.random(),
-                                    ssn: ssnStr,
-                                    name: nameStr,
-                                    registeredAt: new Date().toLocaleString('ar-SA')
-                                });
-                            } else {
-                                duplicates.push(ssnStr);
-                            }
-                        }
-                    });
-                    
-                    studentsList = studentsList.concat(importedStudents);
-                    localStorage.setItem('teacher_students', JSON.stringify(studentsList));
-                    
-                    updateStudentsTable();
-                    
-                    let message = `تم استيراد ${importedStudents.length} طالب بنجاح`;
-                    if (duplicates.length > 0) {
-                        message += ` (تم تجاهل ${duplicates.length} طالب مكرر)`;
-                    }
-                    
-                    showAlert(message, 'success');
-                    updateDashboard();
+                    processImportedData(jsonData);
                     
                 } catch (error) {
-                    console.error('Error:', error);
-                    showAlert('حدث خطأ في قراءة الملف. تأكد من صحة التنسيق', 'error');
+                    console.error('خطأ في معالجة الملف:', error);
+                    showAlert('حدث خطأ في معالجة الملف. تأكد من صحة تنسيق الملف', 'error');
+                    document.getElementById('fileInput').value = '';
                 }
             };
             
-            reader.readAsArrayBuffer(file);
+            reader.onerror = function() {
+                showAlert('حدث خطأ في قراءة الملف', 'error');
+                document.getElementById('fileInput').value = '';
+            };
+            
+            if (fileExtension === '.csv') {
+                reader.readAsText(file, 'UTF-8');
+            } else {
+                reader.readAsArrayBuffer(file);
+            }
+        }
+        
+        // دالة لمعالجة ملف CSV
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n');
+            const result = [];
+            
+            if (lines.length === 0) return result;
+            
+            // الحصول على العناوين من السطر الأول
+            const headers = lines[0].split(',').map(header => header.trim());
+            
+            // معالجة كل سطر من البيانات
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i].trim() === '') continue;
+                
+                const obj = {};
+                const currentline = lines[i].split(',');
+                
+                for (let j = 0; j < headers.length; j++) {
+                    obj[headers[j]] = currentline[j] ? currentline[j].trim() : '';
+                }
+                
+                result.push(obj);
+            }
+            
+            return result;
+        }
+        
+        // دالة لمعالجة البيانات المستوردة
+        function processImportedData(jsonData) {
+            const importedStudents = [];
+            const duplicates = [];
+            const errors = [];
+            
+            jsonData.forEach((row, index) => {
+                try {
+                    // البحث عن أعمدة مختلفة محتملة
+                    let ssn = '';
+                    let name = '';
+                    
+                    // البحث في جميع الخصائص للعثور على السجل المدني والاسم
+                    for (const key in row) {
+                        const value = row[key] ? row[key].toString().trim() : '';
+                        
+                        if (value === '') continue;
+                        
+                        // التعرف على السجل المدني (يحتوي على أرقام فقط وعادة 10 أرقام)
+                        if (/^\d{10,}$/.test(value.replace(/\D/g, '')) && ssn === '') {
+                            ssn = value.replace(/\D/g, '');
+                        }
+                        
+                        // التعرف على الاسم (يحتوي على أحرف عربية)
+                        if (/[\u0600-\u06FF\s]+/.test(value) && name === '') {
+                            name = value;
+                        }
+                        
+                        // محاولات أخرى للتعرف على الأعمدة
+                        const keyLower = key.toLowerCase();
+                        if (keyLower.includes('سجل') || keyLower.includes('ssn') || keyLower.includes('id') || keyLower.includes('رقم')) {
+                            ssn = value.replace(/\D/g, '');
+                        }
+                        
+                        if (keyLower.includes('اسم') || keyLower.includes('name')) {
+                            name = value;
+                        }
+                    }
+                    
+                    // التحقق من وجود البيانات المطلوبة
+                    if (!ssn || ssn.length < 10) {
+                        errors.push(`سطر ${index + 1}: رقم السجل المدني غير صالح`);
+                        return;
+                    }
+                    
+                    if (!name || name.trim() === '') {
+                        errors.push(`سطر ${index + 1}: الاسم غير صالح`);
+                        return;
+                    }
+                    
+                    // التحقق من التكرار
+                    const isDuplicate = studentsList.some(student => student.ssn === ssn);
+                    if (isDuplicate) {
+                        duplicates.push(ssn);
+                    } else {
+                        importedStudents.push({
+                            id: 'STU-' + Date.now() + '-' + index,
+                            ssn: ssn,
+                            name: name,
+                            registeredAt: new Date().toLocaleString('ar-SA')
+                        });
+                    }
+                    
+                } catch (error) {
+                    errors.push(`سطر ${index + 1}: خطأ في المعالجة`);
+                }
+            });
+            
+            // عرض النتائج
+            if (importedStudents.length === 0 && errors.length === 0 && duplicates.length === 0) {
+                showAlert('لم يتم العثور على بيانات صحيحة في الملف. تأكد من أن الملف يحتوي على أعمدة للسجل المدني والاسم', 'error');
+                document.getElementById('fileInput').value = '';
+                return;
+            }
+            
+            // دمج الطلاب المستوردين مع القائمة الحالية
+            if (importedStudents.length > 0) {
+                studentsList = studentsList.concat(importedStudents);
+                localStorage.setItem('teacher_students', JSON.stringify(studentsList));
+                updateStudentsTable();
+            }
+            
+            // إعداد رسالة النتيجة
+            let message = '';
+            if (importedStudents.length > 0) {
+                message += `تم استيراد ${importedStudents.length} طالب بنجاح`;
+            }
+            
+            if (duplicates.length > 0) {
+                if (message) message += '، ';
+                message += `تم تجاهل ${duplicates.length} طالب مكرر`;
+            }
+            
+            if (errors.length > 0) {
+                if (message) message += '، ';
+                message += `حدثت ${errors.length} أخطاء في المعالجة`;
+                
+                // عرض الأخطاء في console للمساعدة في التصحيح
+                console.warn('أخطاء الاستيراد:', errors);
+            }
+            
+            showAlert(message, importedStudents.length > 0 ? 'success' : 'error');
+            updateDashboard();
+            
+            // إعادة تعيين حقل الاختيار
+            document.getElementById('fileInput').value = '';
         }
         
         function downloadTemplate() {
+            // إنشاء البيانات النموذجية
             const templateData = [
-                { 'السجل المدني': '1011121314', 'الاسم': 'أحمد محمد علي' },
-                { 'السجل المدني': '2011121315', 'الاسم': 'سارة خالد حسن' },
-                { 'السجل المدني': '3011121316', 'الاسم': 'علي سعيد محمود' }
+                { 'رقم_السجل_المدني': '1011121314', 'اسم_الطالب': 'أحمد محمد علي' },
+                { 'رقم_السجل_المدني': '2011121315', 'اسم_الطالب': 'سارة خالد حسن' },
+                { 'رقم_السجل_المدني': '3011121316', 'اسم_الطالب': 'علي سعيد محمود' }
             ];
             
-            const worksheet = XLSX.utils.json_to_sheet(templateData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'الطلاب');
+            // التحقق من وجود مكتبة XLSX
+            if (typeof XLSX === 'undefined') {
+                showAlert('مكتبة Excel لم يتم تحميلها. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى.', 'error');
+                return;
+            }
             
-            XLSX.writeFile(workbook, 'نموذج_قائمة_الطلاب.xlsx');
+            try {
+                // إنشاء ورقة العمل
+                const worksheet = XLSX.utils.json_to_sheet(templateData);
+                
+                // تنسيق الأعمدة
+                const wscols = [
+                    { wch: 20 }, // عرض عمود السجل المدني
+                    { wch: 30 }  // عرض عمود الاسم
+                ];
+                worksheet['!cols'] = wscols;
+                
+                // إنشاء المصنف
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'الطلاب');
+                
+                // حفظ الملف
+                XLSX.writeFile(workbook, 'نموذج_قائمة_الطلاب.xlsx');
+                
+                showAlert('تم تحميل ملف النموذج بنجاح', 'success');
+                
+            } catch (error) {
+                console.error('خطأ في إنشاء ملف النموذج:', error);
+                showAlert('حدث خطأ في إنشاء ملف النموذج', 'error');
+            }
         }
         
         function exportToExcel() {
@@ -2125,17 +2414,42 @@
                     return;
                 }
                 
-                const exportData = studentsList.map(s => ({
-                    'السجل المدني': s.ssn,
-                    'الاسم': s.name,
-                    'تاريخ التسجيل': s.registeredAt
+                // التحقق من وجود مكتبة XLSX
+                if (typeof XLSX === 'undefined') {
+                    showAlert('مكتبة Excel لم يتم تحميلها. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى.', 'error');
+                    return;
+                }
+                
+                // تحضير البيانات للتصدير
+                const exportData = studentsList.map((s, index) => ({
+                    'م': index + 1,
+                    'رقم_السجل_المدني': s.ssn,
+                    'اسم_الطالب': s.name,
+                    'تاريخ_التسجيل': s.registeredAt
                 }));
                 
+                // إنشاء ورقة العمل
                 const worksheet = XLSX.utils.json_to_sheet(exportData);
+                
+                // تنسيق الأعمدة
+                const wscols = [
+                    { wch: 5 },  // عرض عمود الترتيب
+                    { wch: 20 }, // عرض عمود السجل المدني
+                    { wch: 30 }, // عرض عمود الاسم
+                    { wch: 25 }  // عرض عمود التاريخ
+                ];
+                worksheet['!cols'] = wscols;
+                
+                // إنشاء المصنف
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, 'قائمة الطلاب');
                 
-                XLSX.writeFile(workbook, 'قائمة_الطلاب_المسجلين.xlsx');
+                // حفظ الملف
+                const fileName = `قائمة_الطلاب_${new Date().toISOString().split('T')[0]}.xlsx`;
+                XLSX.writeFile(workbook, fileName);
+                
+                showAlert(`تم تصدير ${studentsList.length} طالب بنجاح`, 'success');
+                
             } catch (error) {
                 console.error('خطأ في التصدير:', error);
                 showAlert('حدث خطأ في التصدير', 'error');
@@ -2338,7 +2652,7 @@
                 
                 modal.innerHTML = `
                     <div style="background: white; border-radius: 15px; width: 90%; max-width: 900px; max-height: 90vh; overflow-y: auto; padding: 30px; position: relative;">
-                        <button class="close-modal-btn" onclick="this.closest('div[style*=\"position: fixed\"]').remove()">✖</button>
+                        <button class="close-modal-btn" onclick="this.parentElement.parentElement.remove()">✖</button>
                         
                         <h2 style="margin: 0 0 25px 0; color: #1a237e; text-align: center;">${test.title}</h2>
                         
@@ -2391,6 +2705,11 @@
                                 ` : `
                                     <p style="color: #666;"><strong>تعليمات الإجابة:</strong> ${q.instructions || 'بدون تعليمات'}</p>
                                 `}
+                                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                    <button onclick="editTestQuestionPoints(${index}, ${i})" class="btn btn-warning" style="padding: 8px 15px; font-size: 14px;">
+                                        <i class="fas fa-edit"></i> تعديل الدرجة
+                                    </button>
+                                </div>
                             </div>
                         `).join('')}
                     </div>
@@ -2400,6 +2719,74 @@
             } catch (error) {
                 console.error('خطأ في عرض تفاصيل الاختبار:', error);
                 showAlert('حدث خطأ في عرض تفاصيل الاختبار', 'error');
+            }
+        }
+        
+        function editTestQuestionPoints(testIndex, questionIndex) {
+            try {
+                const test = testsList[testIndex];
+                const question = test.questions[questionIndex];
+                const newPoints = prompt('تعديل درجة السؤال:', question.points);
+                
+                if (newPoints !== null && !isNaN(newPoints) && newPoints > 0) {
+                    const oldPoints = question.points;
+                    question.points = parseInt(newPoints);
+                    
+                    localStorage.setItem('teacher_tests', JSON.stringify(testsList));
+                    
+                    updateAllResultsForQuestion(test.id, questionIndex, oldPoints, parseInt(newPoints));
+                    
+                    showAlert('تم تعديل درجة السؤال بنجاح', 'success');
+                    
+                    setTimeout(() => {
+                        document.querySelector('div[style*="position: fixed"]').remove();
+                        viewTestDetails(testIndex);
+                    }, 500);
+                }
+            } catch (error) {
+                console.error('خطأ في تعديل درجة السؤال:', error);
+                showAlert('حدث خطأ في تعديل درجة السؤال', 'error');
+            }
+        }
+        
+        function updateAllResultsForQuestion(testId, questionIndex, oldPoints, newPoints) {
+            try {
+                resultsList.forEach(result => {
+                    if (result.testId === testId && result.answers && result.answers[questionIndex] !== undefined) {
+                        const test = testsList.find(t => t.id === testId);
+                        const question = test.questions[questionIndex];
+                        
+                        if (question.type === 'mcq') {
+                            if (result.answers[questionIndex] === question.correctAnswer) {
+                                const oldScore = result.score || 0;
+                                result.score = oldScore - oldPoints + newPoints;
+                                
+                                if (result.isManuallyGraded) {
+                                    result.finalScore = result.finalScore - oldPoints + newPoints;
+                                    result.finalPercentage = Math.round((result.finalScore / result.total) * 100);
+                                }
+                                
+                                result.percentage = Math.round((result.score / result.total) * 100);
+                            }
+                        } else if (question.type === 'essay' && result.manualGrades && result.manualGrades[questionIndex] !== undefined) {
+                            const manualGrade = result.manualGrades[questionIndex];
+                            const ratio = manualGrade / oldPoints;
+                            const newManualGrade = Math.round(ratio * newPoints);
+                            result.manualGrades[questionIndex] = newManualGrade;
+                            
+                            if (result.isManuallyGraded) {
+                                result.finalScore = result.finalScore - manualGrade + newManualGrade;
+                                result.finalPercentage = Math.round((result.finalScore / result.total) * 100);
+                            }
+                        }
+                        
+                        result.total = result.total - oldPoints + newPoints;
+                    }
+                });
+                
+                localStorage.setItem('teacher_results', JSON.stringify(resultsList));
+            } catch (error) {
+                console.error('خطأ في تحديث النتائج:', error);
             }
         }
         
@@ -2489,7 +2876,7 @@
                 
                 modal.innerHTML = `
                     <div style="background: white; border-radius: 15px; width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; padding: 30px; position: relative;">
-                        <button class="close-modal-btn" onclick="this.closest('div[style*=\"position: fixed\"]').remove()">✖</button>
+                        <button class="close-modal-btn" onclick="this.parentElement.parentElement.remove()">✖</button>
                         
                         <h2 style="margin: 0 0 25px 0; color: #1a237e; text-align: center;">نتائج اختبار: ${test ? test.title : 'غير معروف'}</h2>
                         
@@ -2558,6 +2945,12 @@
                 const test = testsList.find(t => t.id === testId);
                 
                 if (!testResults.length) return;
+                
+                // التحقق من وجود مكتبة XLSX
+                if (typeof XLSX === 'undefined') {
+                    showAlert('مكتبة Excel لم يتم تحميلها. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى.', 'error');
+                    return;
+                }
                 
                 const exportData = testResults.map((r, i) => ({
                     'م': i + 1,
@@ -2733,10 +3126,6 @@
                                     <i class="fas fa-arrow-right"></i> السؤال السابق
                                 </button>
                                 
-                                <button onclick="saveAllGrades()" class="btn btn-success">
-                                    <i class="fas fa-save"></i> حفظ جميع الدرجات
-                                </button>
-                                
                                 <button onclick="nextGradingQuestion()" class="btn btn-primary">
                                     السؤال التالي <i class="fas fa-arrow-left"></i>
                                 </button>
@@ -2745,6 +3134,9 @@
                         
                         <div class="print-btn" id="printAnswersBtn" style="display: none;" onclick="printStudentAnswers()">
                             <i class="fas fa-print"></i> طباعة الإجابات
+                        </div>
+                        <div class="save-float-btn" id="saveFloatBtn" style="display: none;" onclick="saveAllGrades()">
+                            <i class="fas fa-save"></i> الحفظ
                         </div>
                     </div>
                 `;
@@ -2848,11 +3240,13 @@
             const gradingContainer = document.getElementById('gradingContainer');
             const studentNavigation = document.getElementById('studentNavigation');
             const printBtn = document.getElementById('printAnswersBtn');
+            const saveFloatBtn = document.getElementById('saveFloatBtn');
             
             if (select.value === '') {
                 gradingContainer.style.display = 'none';
                 studentNavigation.style.display = 'none';
                 if (printBtn) printBtn.style.display = 'none';
+                if (saveFloatBtn) saveFloatBtn.style.display = 'none';
                 return;
             }
 
@@ -2868,6 +3262,7 @@
             gradingContainer.style.display = 'block';
             studentNavigation.style.display = 'flex';
             if (printBtn) printBtn.style.display = 'flex';
+            if (saveFloatBtn) saveFloatBtn.style.display = 'flex';
             
             updateStudentCounter();
             updateGradingDisplay();
@@ -3265,13 +3660,6 @@
                     
                     updateResultsList();
                     updateDashboard();
-                    
-                    setTimeout(() => {
-                        closeGradingModal();
-                        if (document.querySelector('.tab-content.active').id === 'viewTests') {
-                            updateTestsList();
-                        }
-                    }, 2000);
                 }
             } catch (error) {
                 console.error('خطأ في حفظ الدرجات:', error);
@@ -3542,45 +3930,6 @@
                 }
             }, 5000);
         }
-        <!-- Firebase CDN -->
-<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
-
-<!-- إعداد Firebase -->
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyDHYUyj36bCFbin-10KNHv2Y9BfaQ9tooY",
-    authDomain: "exam-system-teacher-student.firebaseapp.com",
-    projectId: "exam-system-teacher-student",
-    storageBucket: "exam-system-teacher-student.firebasestorage.app",
-    messagingSenderId: "982683818654",
-    appId: "1:982683818654:web:824126e45089984152398f",
-    measurementId: "G-Q2SFE6G9RE"
-  };
-
-  // تهيئة Firebase
-  firebase.initializeApp(firebaseConfig);
-
-  // Firestore
-  const db = firebase.firestore();
-
-  // تجربة حفظ بيانات
-  function testSave() {
-    db.collection("testCollection").add({
-      message: "مرحبا من موقع المعلم",
-      time: new Date()
-    })
-    .then((docRef) => {
-      alert("تم حفظ البيانات بنجاح في Firebase");
-      console.log("Document ID:", docRef.id);
-    })
-    .catch((error) => {
-      alert("حدث خطأ أثناء الحفظ");
-      console.error(error);
-    });
-  }
-</script>
-
+    </script>
 </body>
 </html>
-
